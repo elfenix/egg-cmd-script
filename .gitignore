@@ -5,3 +5,14 @@
 *.scm~
 *.scm#*
 .#*.scm
+
+*.so
+
+# chicken-install generated
+*.build.sh
+*.import.scm
+*.install.sh
+*.link
+*.static.o
+
+*.swp
