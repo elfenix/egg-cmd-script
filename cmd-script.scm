@@ -1,15 +1,24 @@
-(module cmd-script (script-entry?
+(module cmd-script (script-entry
+                    script-stringize
+                    script-entry?
                     script-entry.get-cd
-                    script-entry.get-env
+                    script-entry.get-environ
                     script-entry.get-cmd-list
+                    script-entry.set-cd
+                    script-entry.set-env
+                    script-entry.set-environ
+                    script-entry.set-cmd-list
                     cmd-builder?
                     cmd-builder-new
                     cmd-builder.script
                     script.cd
                     script.cmd
+                    script.set-env
                     )
+  (import (chicken base))
   (import scheme)
   (import srfi-1)
+  (import (chicken condition))
   
   (define (script-entry #!key (cd ".") (env '()) (cmd-list '()) (type 'work-env))
     `(script-entry (cd . ,cd)
@@ -17,9 +26,18 @@
                    (cmd-list . ,cmd-list)
                    (type . ,type)))
 
+  (define (script-type-error msg)
+    (condition `(script-type-error msg ,msg)))
+
   (define (script-entry? se)
     (and (pair? se)
          (eq? (car se) 'script-entry)))
+
+  (define (script-stringize val)
+    (cond ((symbol? val) (symbol->string val))
+          ((string? val) val)
+          (#t (abort (script-type-error "Expected string")))
+    ))
 
   (define (script-entry.get-field se fname)
     (cdr (assoc fname (cdr se))))
@@ -42,11 +60,21 @@
   (define (script-entry.set-cd se path)
     (script-entry.set-field se 'cd path))
 
-  (define (script-entry.get-env se)
+  (define (script-entry.get-environ se)
     (script-entry.get-field se 'env))
 
-  (define (script-entry.set-env se env)
+  (define (script-entry.set-environ se env)
     (script-entry.set-field se 'env env))
+
+  (define (script-entry.set-env se var value)
+    (let ((var.str (script-stringize var))
+          (value.str (script-stringize value)))
+      (script-entry.set-environ
+        se
+        (alist-cons var.str
+                    value.str
+                    (alist-delete var.str (script-entry.get-environ se)))
+      )))
 
   (define (script-entry.get-cmd-list se)
     (script-entry.get-field se 'cmd-list))
@@ -122,6 +150,12 @@
   (define (script.cmd cmd-list)
     (lambda (builder)
       (cmd-builder.add-cmd builder `(cmd . ,cmd-list))))
+
+  (define (script.set-env var value)
+    (lambda (builder)
+      (cmd-builder.apply-work builder
+                              (lambda (we) (script-entry.set-env we var value)))
+    ))
 
 
 )
