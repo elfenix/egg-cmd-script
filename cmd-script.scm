@@ -1,5 +1,7 @@
-(module cmd-script (script-entry
+(module cmd-script (script-clear-env!
+                    script-entry
                     script-stringize
+                    script-stringize-list
                     script-entry?
                     script-entry.get-cd
                     script-entry.get-environ
@@ -11,6 +13,7 @@
                     cmd-builder?
                     cmd-builder-new
                     cmd-builder.script
+                    cmd-builder.entry
                     script.cd
                     script.cmd
                     script.set-env
@@ -19,7 +22,27 @@
   (import scheme)
   (import srfi-1)
   (import (chicken condition))
+  (import (chicken process))
+  (import (chicken process-context))
+
+;; --- Supporting Routines ----
+  (define (alist-keys alist)
+    (if (pair? alist)
+        (cons (caar alist) (alist-keys (cdr alist)))
+        '()))
+
+;; --- Execution Environment Manipulation ----
+  (define (%unset-env-variables! . L)
+    (if (pair? L)
+        (begin
+          (unset-environment-variable! (car L))
+          (apply %unset-env-variables! (cdr L)))
+        #f))
+
+  (define (script-clear-env!)
+    (apply %unset-env-variables! (alist-keys (get-environment-variables))))
   
+;; ---- Script Entry Support -----
   (define (script-entry #!key (cd ".") (env '()) (cmd-list '()) (type 'work-env))
     `(script-entry (cd . ,cd)
                    (env . ,env)
@@ -38,6 +61,11 @@
           ((string? val) val)
           (#t (abort (script-type-error "Expected string")))
     ))
+
+  (define (script-stringize-list . T)
+    (if (pair? T)
+        (cons (script-stringize (car T)) (apply script-stringize-list (cdr T)))
+        '()))
 
   (define (script-entry.get-field se fname)
     (cdr (assoc fname (cdr se))))
@@ -87,6 +115,7 @@
 
   (define (script-entry.set-type se type)
     (script-entry.set-field se 'type type))
+
 
   (define (cmd-builder? f)
     (and (pair? f)
@@ -147,9 +176,13 @@
                               (lambda (we) (script-entry.set-cd we new-dir)))
       ))
 
-  (define (script.cmd cmd-list)
+  (define (script.cmd . cmd-list)
     (lambda (builder)
-      (cmd-builder.add-cmd builder `(cmd . ,cmd-list))))
+      (cmd-builder.add-cmd builder
+                           (lambda (_)
+                             (let ((sl (apply script-stringize-list cmd-list)))
+                               (process-run (car sl) (cdr sl))))
+       )))
 
   (define (script.set-env var value)
     (lambda (builder)
